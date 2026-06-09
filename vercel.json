@@ -1,12 +1,9 @@
 {
+  "outputDirectory": "frontend",
   "rewrites": [
     {
       "source": "/api/(.*)",
       "destination": "https://github-repo-chat-production.up.railway.app/api/$1"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/frontend/index.html"
     }
   ]
 }
