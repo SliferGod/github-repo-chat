@@ -1,6 +1,6 @@
 # repochat
 
-A dark, minimalist GitHub repository chat app. Paste any public GitHub URL, it indexes the codebase using **LlamaIndex** + BGE embeddings, then lets you ask questions via a RAG pipeline powered by **Groq** (Llama 3.3 70B) with **Gemini 2.5 Flash** as fallback.
+A GitHub repository chat app. Paste any public GitHub URL, it indexes the codebase using **LlamaIndex** + BGE embeddings, then lets you ask questions via a RAG pipeline powered by **Groq** (Llama 3.3 70B) with **Gemini 2.5 Flash** as fallback.
 
 ---
 
@@ -22,8 +22,8 @@ A dark, minimalist GitHub repository chat app. Paste any public GitHub URL, it i
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/yourname/repochat
-cd repochat
+git clone https://github.com/SliferGod/github-repo-chat
+cd github-repo-chat
 pip install -r requirements.txt
 ```
 
