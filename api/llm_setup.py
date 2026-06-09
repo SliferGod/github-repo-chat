@@ -1,9 +1,13 @@
 """LLM + embedding initialisation for GitHub Chat.
 
-Provider priority:
+LLM priority:
 - Groq llama-3.3-70b-versatile  — primary (higher RPM, fast)
 - Gemini 2.5 Flash               — fallback when GROQ_API_KEY is absent
-- BGE base                       — local embeddings (no API quota)
+
+Embedding priority (all API-based — no torch/transformers required):
+- Gemini text-embedding-004      — if GEMINI_API_KEY set
+- OpenAI text-embedding-3-small  — if OPENAI_API_KEY set
+- Groq does not offer an embeddings API, so we fall through to Gemini/OpenAI
 """
 
 import os
@@ -11,8 +15,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from llama_index.core import Settings
 
-# Load .env — check the current dir, the api/ parent, and one level above that
-# so this works whether uvicorn is launched from the project root or from api/
+# Load .env — check cwd, api/, and project root
 for _candidate in (
     Path.cwd() / ".env",
     Path(__file__).parent / ".env",
@@ -22,15 +25,23 @@ for _candidate in (
         load_dotenv(_candidate, override=False)
         break
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_API_KEY   = os.getenv("GROQ_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 if not GROQ_API_KEY and not GEMINI_API_KEY:
     raise RuntimeError(
         "At least one of GROQ_API_KEY or GEMINI_API_KEY must be set. "
-        "Create a .env file in the project root with your keys (see .env.example)."
+        "Create a .env file in the project root (see .env.example)."
     )
 
+if not GEMINI_API_KEY and not OPENAI_API_KEY:
+    raise RuntimeError(
+        "An embedding API key is required for Vercel deployment. "
+        "Set GEMINI_API_KEY (preferred) or OPENAI_API_KEY in your environment."
+    )
+
+# ── LLMs ──────────────────────────────────────────────────────────────────────
 groq_llm = None
 gemini_llm = None
 
@@ -42,11 +53,21 @@ if GEMINI_API_KEY:
     from llama_index.llms.google_genai import GoogleGenAI
     gemini_llm = GoogleGenAI(model="gemini-2.5-flash", api_key=GEMINI_API_KEY)
 
-# Prefer Groq; fall back to Gemini
 primary_llm = groq_llm or gemini_llm
 
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-base-en-v1.5")
+# ── Embeddings (API-based, no local model weights) ────────────────────────────
+if GEMINI_API_KEY:
+    from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
+    embed_model = GoogleGenAIEmbedding(
+        model_name="gemini-embedding-2-preview",
+        api_key=GEMINI_API_KEY,
+    )
+elif OPENAI_API_KEY:
+    from llama_index.embeddings.openai import OpenAIEmbedding
+    embed_model = OpenAIEmbedding(
+        model="text-embedding-3-small",
+        api_key=OPENAI_API_KEY,
+    )
 
 Settings.llm = primary_llm
 Settings.embed_model = embed_model
