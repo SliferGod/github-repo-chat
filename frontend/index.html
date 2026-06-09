@@ -525,17 +525,9 @@ const state = {
 };
 
 // ── API base URL ─────────────────────────────────────────────────────────────
-// Priority:
-//   1. NEXT_PUBLIC_API_URL injected at build time by Vercel
-//   2. Local file or localhost → hit localhost:8000
-//   3. Same-origin deployment (fallback)
-const _injected = "__NEXT_PUBLIC_API_URL__";  // replaced by Vercel build if set
-const _origin = window.location.origin;
-const API_BASE = (_injected && !_injected.startsWith("__"))
-  ? _injected
-  : (_origin === "null" || _origin.includes("localhost") || _origin.includes("127.0.0.1"))
-    ? "http://localhost:8000"
-    : _origin;
+// Same-origin deployment on Railway — all API calls are relative.
+// For local dev, the backend also runs on the same port (8000), so this works there too.
+const API_BASE = "";
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
 const repoUrl    = document.getElementById("repo-url");

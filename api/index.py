@@ -6,6 +6,7 @@ GET  /api/health              — liveness probe
 POST /api/index-repo          — fetch + index a GitHub repository
 POST /api/chat                — RAG query against an indexed repo
 GET  /api/repo-info/{key}     — metadata for an indexed repo
+GET  /                        — serves frontend/index.html
 """
 
 import os
@@ -15,7 +16,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from pathlib import Path
 
 # Boot LLMs and embedding model once at import time.
 from llm_setup import get_llm
@@ -24,22 +24,26 @@ import repo_store
 app = FastAPI(title="GitHub Chat API")
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
-_origins = ["http://localhost:3000", "http://localhost:5173", "http://localhost:8000"]
+# Frontend is served from the same origin on Railway, so CORS is only needed
+# for local development. Adjust FRONTEND_ORIGIN env var if you ever split them.
+_origins = ["http://localhost:8000"]
 _extra = os.getenv("FRONTEND_ORIGIN", "")
 if _extra:
     _origins += [o.strip() for o in _extra.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # Vercel preview URLs are dynamic; lock down in prod via FRONTEND_ORIGIN
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Serve the frontend static files (only if the static subdirectory exists)
+# ── Paths ─────────────────────────────────────────────────────────────────────
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
-STATIC_DIR = FRONTEND_DIR / "static"
+STATIC_DIR   = FRONTEND_DIR / "static"
+
+# Mount /static only if a static sub-folder exists (optional assets)
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -55,7 +59,7 @@ class ChatRequest(BaseModel):
     question: str
 
 
-# ── Endpoints ─────────────────────────────────────────────────────────────────
+# ── API Endpoints ─────────────────────────────────────────────────────────────
 
 @app.get("/api/health")
 def health():
@@ -93,18 +97,17 @@ def chat(body: ChatRequest):
 @app.get("/api/repo-info/{repo_key}")
 def repo_info(repo_key: str):
     """Check whether a repo_key is currently indexed in /tmp."""
-    from pathlib import Path
     index_dir = repo_store.TMP_ROOT / repo_key
     if not index_dir.exists():
         raise HTTPException(status_code=404, detail="Repo not indexed in this instance.")
     return {"repo_key": repo_key, "index_dir": str(index_dir), "indexed": True}
 
 
-# ── Root — serve frontend ─────────────────────────────────────────────────────
+# ── Frontend — must be last so it doesn't swallow API routes ─────────────────
 
 @app.get("/")
 def root():
-    html_path = Path(__file__).parent.parent / "frontend" / "index.html"
+    html_path = FRONTEND_DIR / "index.html"
     if html_path.exists():
         return FileResponse(str(html_path))
     return {"message": "GitHub Chat API is running. See /docs for API reference."}
