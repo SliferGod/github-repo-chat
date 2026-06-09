@@ -1,29 +1,45 @@
 # repochat
 
-A GitHub repository chat app. Paste any public GitHub URL, it indexes the codebase using **LlamaIndex** + BGE embeddings, then lets you ask questions via a RAG pipeline powered by **Groq** (Llama 3.3 70B) with **Gemini 2.5 Flash** as fallback.
+A GitHub repository chat app. Paste any public GitHub URL, index the codebase with a single click, then ask questions about it. It is powered by a RAG pipeline built on LlamaIndex.
+
+![Python](https://img.shields.io/badge/python-3.12-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green) ![LlamaIndex](https://img.shields.io/badge/LlamaIndex-0.14-orange)
 
 ---
 
 ## Stack
 
 | Layer | Technology |
-|-------|-----------|
-| Backend | FastAPI (Vercel serverless) |
-| RAG / Indexing | LlamaIndex VectorStoreIndex |
-| Embeddings | `BAAI/bge-base-en-v1.5` (local, HuggingFace) |
+|---|---|
+| Backend | FastAPI |
+| RAG / Indexing | LlamaIndex `VectorStoreIndex` |
+| Embeddings | Gemini `text-embedding-004` (API-based) |
 | LLM (primary) | Groq — `llama-3.3-70b-versatile` |
 | LLM (fallback) | Gemini 2.5 Flash |
-| Frontend | Vanilla HTML/CSS/JS — dark monospace terminal aesthetic |
+| Frontend | Vanilla HTML/CSS/JS — dark monospace terminal UI |
+| Hosting | Railway (full-stack, single service) |
+
+---
+
+## How it works
+
+1. **Index** — The backend calls the GitHub Contents API to fetch all text-based source files (`.py`, `.js`, `.ts`, `.md`, etc., up to 300 files). Each file becomes a LlamaIndex `Document`, embedded via Gemini and stored as a `VectorStoreIndex` in `/tmp/<repo_key>/`.
+
+2. **Chat** — Each question runs through LlamaIndex's query engine with `similarity_top_k=5`. Retrieved nodes are passed to Groq (or Gemini) to generate a grounded answer. Source file paths and snippets are returned alongside the answer.
+
+3. **Caching** — Indexes live in `/tmp` for the lifetime of the Railway container instance. Re-submitting the same repo URL reuses the existing index instantly.
 
 ---
 
 ## Local development
 
-### 1. Clone and install
+### 1. Install dependencies
 
 ```bash
 git clone https://github.com/SliferGod/github-repo-chat
 cd github-repo-chat
+python -m venv .venv
+.venv\Scripts\activate        # Windows
+# source .venv/bin/activate   # macOS/Linux
 pip install -r requirements.txt
 ```
 
@@ -31,67 +47,85 @@ pip install -r requirements.txt
 
 ```bash
 cp .env.example .env
-# Fill in GROQ_API_KEY and/or GEMINI_API_KEY
+```
+
+Edit `.env` and fill in your keys:
+
+```
+GROQ_API_KEY=your_groq_api_key
+GEMINI_API_KEY=your_gemini_api_key
+GITHUB_TOKEN=your_github_pat        # optional but recommended
 ```
 
 ### 3. Run
 
 ```bash
 cd api
-uvicorn index:app --reload --port 8000
+uvicorn index:app --reload
 ```
 
-Open `frontend/index.html` in a browser, or visit `http://localhost:8000`.
+Then open `http://localhost:8000` in your browser.
 
 ---
 
-## Deploy to Vercel
+## Deploy to Railway
 
-### 1. Set secrets in Vercel dashboard
+Railway runs the full app — backend and frontend — in a single Docker container. No Vercel needed.
 
-```
-GROQ_API_KEY      → your Groq API key
-GEMINI_API_KEY    → your Gemini API key (fallback)
-GITHUB_TOKEN      → GitHub PAT (optional, raises rate limit to 5000/hr)
-```
+### 1. Create a Railway project
 
-### 2. Deploy
+1. Go to [railway.app](https://railway.app) and sign in
+2. Click **New Project** → **Deploy from GitHub repo**
+3. Select your repochat repository
+4. Railway auto-detects the `Dockerfile` and starts building
 
-```bash
-npm i -g vercel
-vercel --prod
-```
+### 2. Add environment variables
 
-Vercel will pick up `vercel.json` automatically.
+In your Railway service dashboard, go to **Variables** and add:
 
-> **Note on cold starts:** The BGE embedding model (~440 MB) is downloaded on first boot. Subsequent requests reuse the warm instance. Consider pre-baking model weights into a Docker image (see `Dockerfile.example`) for production use.
+| Variable | Value |
+|---|---|
+| `GROQ_API_KEY` | Your Groq API key |
+| `GEMINI_API_KEY` | Your Gemini API key |
+| `GITHUB_TOKEN` | Your GitHub PAT *(optional)* |
+
+### 3. Expose a public URL
+
+1. Click your service → **Settings** tab
+2. Scroll to **Networking** → **Public Networking**
+3. Click **Generate Domain**
+
+Railway gives you a URL like `github-repo-chat-production.up.railway.app`. That's your live app — open it in a browser and it's ready to use.
 
 ---
 
 ## API reference
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/health` | Liveness probe |
-| `POST` | `/api/index-repo` | `{"github_url": "..."}` → fetches + indexes repo |
-| `POST` | `/api/chat` | `{"repo_key": "...", "question": "..."}` → RAG answer |
-| `GET` | `/api/repo-info/{key}` | Check if a repo key is indexed |
+| Method | Path | Body | Description |
+|---|---|---|---|
+| `GET` | `/api/health` | — | Liveness probe |
+| `POST` | `/api/index-repo` | `{"github_url": "..."}` | Fetch and index a repo |
+| `POST` | `/api/chat` | `{"repo_key": "...", "question": "..."}` | RAG query |
+| `GET` | `/api/repo-info/{key}` | — | Check if a key is indexed |
 
 ---
 
-## How it works
+## Environment variables
 
-1. **Index**: The backend calls the GitHub Contents API to fetch all text-based source files (`.py`, `.js`, `.ts`, `.md`, etc.) from the repo tree. Each file becomes a `Document`. LlamaIndex builds a `VectorStoreIndex` using BGE embeddings and persists it to `/tmp/<repo_key>/`.
+| Variable | Required | Description |
+|---|---|---|
+| `GROQ_API_KEY` | (or Gemini) | Primary LLM — Llama 3.3 70B via Groq |
+| `GEMINI_API_KEY` | (or Groq) | Fallback LLM + embeddings provider |
+| `OPENAI_API_KEY` | Only if no Gemini key | Fallback embeddings via `text-embedding-3-small` |
+| `GITHUB_TOKEN` | optional | Raises GitHub API rate limit from 60 → 5000 req/hr |
 
-2. **Chat**: Each question runs through LlamaIndex's `as_query_engine()` with `similarity_top_k=5`. The retrieved nodes are passed to Groq (or Gemini) to generate a grounded answer. Source file paths and snippets are returned alongside the answer.
-
-3. **Caching**: Indexes persist in `/tmp` for the lifetime of the serverless instance. Re-indexing the same repo URL is a no-op if the key already exists.
+At least one LLM key and one embedding key are required. If `GEMINI_API_KEY` is set it covers both roles.
 
 ---
 
 ## Limitations
 
-- Public repos only (no auth). Add a `GITHUB_TOKEN` to raise the rate limit.
-- Large monorepos are capped at 300 files (configurable via `MAX_FILES` in `repo_store.py`).
-- `/tmp` storage is ephemeral on Vercel — indexes are rebuilt on cold start.
-- The BGE model requires ~2 GB RAM; ensure your Vercel plan supports it.
+- **Public repos only** — private repos require passing a GitHub token in the API call (not currently implemented in the UI)
+- **300 file cap** — large monorepos are trimmed to the first 300 indexable files (configurable via `MAX_FILES` in `repo_store.py`)
+- **Ephemeral indexes** — `/tmp` storage is cleared on Railway container restarts; just re-index the repo after a restart
+- **Rate limits** — without a `GITHUB_TOKEN`, the GitHub API allows only 60 unauthenticated requests per hour
