@@ -1,4 +1,4 @@
-# repochat
+# github-repo-chat
 
 A GitHub repository chat app. Paste any public GitHub URL, index the codebase with a single click, then ask questions about it. It is powered by a RAG pipeline built on LlamaIndex.
 
